@@ -1,5 +1,3 @@
-from ultralytics import YOLO
-import segmentation_models_pytorch as smp
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -24,6 +22,8 @@ from torchvision import transforms
 from torch import nn
 from torch.nn import functional as F
 import cv2 as cv
+from ultralytics import YOLO
+import segmentation_models_pytorch as smp
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
