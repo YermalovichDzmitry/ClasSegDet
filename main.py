@@ -24,6 +24,11 @@ from torch.nn import functional as F
 import cv2 as cv
 from ultralytics import YOLO
 import segmentation_models_pytorch as smp
+from pl_bolts.models.autoencoders.components import (
+    resnet18_decoder,
+    resnet18_encoder,
+)
+import pytorch_lightning as pl
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
@@ -140,6 +145,51 @@ transform_vae = transforms.Compose([
 ])
 
 
+def check_anomalies(network, img, th):
+    network.eval()
+
+    # img = PIL.Image.open(f"/content/anomalies/{f}")
+    img_transform = transform_vae(img)
+    t_img = torch.unsqueeze(img_transform, 0)
+    t_img = t_img
+
+    trans = network(t_img)
+    mae_error = np.mean(np.abs(trans[0][0].detach().cpu().numpy() - t_img.cpu().numpy()))
+    if mae_error >= th:
+        return "anomaly"
+    else:
+        return "no anomaly"
+    return 0
+
+
+class VAE(torch.nn.Module):
+    def __init__(self, enc_out_dim=512, latent_dim=256, input_height=64):
+        super(VAE, self).__init__()
+        self.encoder = resnet18_encoder(False, False)
+        self.decoder = resnet18_decoder(
+            latent_dim=latent_dim,
+            input_height=input_height,
+            first_conv=False,
+            maxpool1=False
+        )
+        self.fc_mu = torch.nn.Linear(enc_out_dim, latent_dim)
+        self.fc_var = torch.nn.Linear(enc_out_dim, latent_dim)
+
+    def forward(self, batch):
+        x_encoded = self.encoder(batch)
+
+        mu, log_var = self.fc_mu(x_encoded), self.fc_var(x_encoded)
+
+        std = torch.exp(log_var / 2)
+        q = torch.distributions.Normal(mu, std)
+        z = q.rsample()
+
+        # reconstruction = self.decoder(z)
+        x = self.decoder(z)
+        reconstruction = torch.sigmoid(x)
+        return reconstruction, mu, log_var
+
+
 @st.cache_resource()
 def load_models():
     # Model1
@@ -177,11 +227,15 @@ def load_models():
 
     detection_model = YOLO("DetectionModels/yolov8xNewData100.pt")
 
-    return model1, model3, model4, seg_model, detection_model
+    state = torch.load("VaeModels/vae_new_model_best_model.pt", map_location='cpu')
+    vae_model = VAE()
+    vae_model.load_state_dict(state['state_dict'])
+    vae_model.eval()
+    return model1, model3, model4, seg_model, detection_model, vae_model
 
 
 with st.spinner('Models is being loaded..'):
-    model1, model3, model4, seg_model, detection_model = load_models()
+    model1, model3, model4, seg_model, detection_model, vae_model = load_models()
     ensemble_model = [model1, model3, model4]
 st.title('Medical application')
 
@@ -272,7 +326,8 @@ if page == "Identify a mole" or page == "Determine the location and degree of bu
         if page == "Identify a mole":
             if st.session_state["nav"] == 1:
                 image = Image.open(file)
-                if "no anomaly" == "no anomaly":
+                res = check_anomalies(vae_model, image, 0.15)
+                if res == "no anomaly":
                     with st.spinner('Makeing predictions..'):
                         prediction = predict_cancer(image, ensemble_model)
                     st.image(load_transform(image), caption=prediction)
