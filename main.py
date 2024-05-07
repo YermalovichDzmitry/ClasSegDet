@@ -1,26 +1,14 @@
 import numpy as np
 import torch
-from torch.utils.data import Dataset
-import torchvision
 import albumentations as A
-from torch.utils.data import DataLoader
-from random import randint
-import os
-import collections
-import torch.nn.functional as F
 import streamlit as st
 from torchvision.models import efficientnet_b3
-from torchvision.models import EfficientNet_B3_Weights
 from torchvision.models import mobilenet_v3_small
-from torchvision.models import MobileNet_V3_Small_Weights
 import ssl
 from streamlit_gsheets import GSheetsConnection
 from collections import Counter
 from PIL import Image
-from albumentations.augmentations.transforms import Normalize
 from torchvision import transforms
-from torch import nn
-from torch.nn import functional as F
 import cv2 as cv
 from ultralytics import YOLO
 import segmentation_models_pytorch as smp
@@ -28,7 +16,6 @@ from pl_bolts.models.autoencoders.components import (
     resnet18_decoder,
     resnet18_encoder,
 )
-import pytorch_lightning as pl
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
@@ -47,14 +34,14 @@ classes = {
 }
 
 class2id = {
-    "first degree": 0,
-    "second degree": 1,
-    "third degree": 2
+    "1 degree": 0,
+    "2 degree": 1,
+    "3 degree": 2
 }
 id2class = {
-    0: "first degree",
-    1: "second degree",
-    2: "third degree"
+    0: "1 degree",
+    1: "2 degree",
+    2: "3 degree"
 
 }
 
@@ -234,16 +221,52 @@ def load_models():
     return model1, model3, model4, seg_model, detection_model, vae_model
 
 
-with st.spinner('Models is being loaded..'):
+with st.spinner('Модели загружаются..'):
     model1, model3, model4, seg_model, detection_model, vae_model = load_models()
     ensemble_model = [model1, model3, model4]
-st.title('Medical application')
+st.title('Медицинское приложение ')
 
-page_name = ['Identify a mole', 'Determine the location and degree of burn']
-page = st.radio('Navigation', page_name)
+@st.experimental_fragment
+def select_doctor():
+    city_name = ["Минск", "Гродно"]
+    minsk_hospital_name = ["ЛОДЭ", "Доктор Профи"]
+    grodno_hospital_name = ["Росмед", "БИАР"]
+    lode_phone = ['111']
+    doktor_profi = ['8 029 323-75-03']
+    rosmed_phone = ['8 029 288-77-74']
+    biar_phone = ['8 033 334-03-40']
+    col1, col2, col3 = st.columns(3)
 
-if page == "Identify a mole" or page == "Determine the location and degree of burn":
-    file = st.file_uploader("Please upload an image", type=["jpg", "png"])
+    with col1:
+        selected_city = st.selectbox("Выберите город, в котором хотите получить медицинскую услугу", options=city_name)
+    with col2:
+        if selected_city == "Минск":
+            selected_hospital = st.selectbox(f"Выберите больницу, в которой хотите получить лечение",
+                                             options=minsk_hospital_name)
+        if selected_city == "Гродно":
+            selected_hospital = st.selectbox(f"Выберите больницу, в которой хотите получить лечение",
+                                             options=grodno_hospital_name)
+    with col3:
+        if selected_city == "Минск" and selected_hospital == 'ЛОДЭ':
+            selected_city = st.selectbox(f"Выберите номер телефона, по которому хотите записаться к врачу",
+                                         options=lode_phone)
+        if selected_city == "Минск" and selected_hospital == 'Доктор Профи':
+            selected_city = st.selectbox(f"Выберите номер телефона, по которому хотите записаться к врачу",
+                                         options=doktor_profi)
+        if selected_city == "Гродно" and selected_hospital == 'Росмед':
+            selected_city = st.selectbox(f"Выберите номер телефона, по которому хотите записаться к врачу",
+                                         options=rosmed_phone)
+        if selected_city == "Гродно" and selected_hospital == 'БИАР':
+            selected_city = st.selectbox(f"Выберите номер телефона, по которому хотите записаться к врачу",
+                                         options=biar_phone)
+
+select_doctor()
+
+page_name = ['Определить тип родинки и поражение', 'Определить место и степень ожога']
+page = st.radio('Навигация', page_name)
+
+if page == "Определить тип родинки и поражение" or page == "Определить место и степень ожога":
+    file = st.file_uploader("Пожалуйста, загрузите изображение", type=["jpg", "png"])
 
 
 def predict_cancer(img, models):
@@ -285,8 +308,8 @@ def return_box_img(img, model):
     results = model(img)
     boxes = results[0].boxes
 
-    thickness = 4
-    color = (255, 0, 0)
+    thickness = 2
+    color = (0, 0, 255)
 
     for i in range(len(boxes.xyxy)):
         # Формируем координаты левого верхнего угла и правого нижнего
@@ -301,29 +324,29 @@ def return_box_img(img, model):
             id2class[int(boxes.cls[i])],
             org=start_points,
             fontFace=cv.FONT_HERSHEY_PLAIN,
-            fontScale=5.75,
-            color=(0, 0, 255),
-            thickness=6
+            fontScale=2.8,
+            color=(0, 0, 0),
+            thickness=2,
         )
 
     return img_np
 
 
-if page == "Identify a mole" or page == "Determine the location and degree of burn":
+if page == "Определить тип родинки и поражение" or page == "Определить место и степень ожога":
     if file is None:
         pass
     else:
         if "nav" not in st.session_state:
-            if page == "Identify a mole":
+            if page == "Определить тип родинки и поражение":
                 st.session_state["nav"] = 1
-            elif page == "Determine the location and degree of burn":
+            elif page == "Определить место и степень ожога":
                 st.session_state["nav"] = 2
 
-if page == "Identify a mole" or page == "Determine the location and degree of burn":
+if page == "Определить тип родинки и поражение" or page == "Определить место и степень ожога":
     if file is None:
         pass
     else:
-        if page == "Identify a mole":
+        if page == "Определить тип родинки и поражение":
             if st.session_state["nav"] == 1:
                 image = Image.open(file)
                 res = check_anomalies(vae_model, image, 0.15)
@@ -362,19 +385,18 @@ if page == "Identify a mole" or page == "Determine the location and degree of bu
                             "Меланоцитарный невус(Melanocytic nevus) — медицинский термин, обозначающий родинку. Невусы могут появиться на любом участке тела. Они доброкачественные (не раковые) и обычно не требуют лечения. В очень небольшом проценте меланоцитарных невусов может развиться меланома.")
                     elif prediction == "Squamous cell carcinoma":
                         st.write(
-                            "Плоскоклеточный рак кожи(Squamous cell carcinoma) — это тип рака, который начинается с разрастания клеток на коже. Это начинается в клетках, называемых плоскими клетками. Плоские клетки составляют средний и наружный слои кожи. Плоскоклеточный рак — распространенный тип рака кожи. 11 авг. 2023г.")
+                            "Плоскоклеточный рак кожи(Squamous cell carcinoma) — это тип рака, который начинается с разрастания клеток на коже. Это начинается в клетках, называемых плоскими клетками. Плоские клетки составляют средний и наружный слои кожи. Плоскоклеточный рак — распространенный тип рака кожи.")
                     elif prediction == "Vascular lesion":
                         st.write(
                             "Сосудистые поражения(Vascular lesion) — это аномальные разрастания или пороки развития кровеносных сосудов, которые могут возникать в различных частях тела. Они могут быть врожденными или приобретенными и могут возникнуть в результате травмы, инфекции или других заболеваний.")
                 else:
-                    st.write("This isn't mole or poor quality image. Upload another image")
+                    st.write("Это не родинка или изображение плохого качества. Загрузите другое изображение")
             else:
                 st.session_state["nav"] = 1
-        if page == "Determine the location and degree of burn":
+        elif page == "Определить место и степень ожога":
             if st.session_state["nav"] == 2:
                 image = Image.open(file)
                 box_image = return_box_img(image, detection_model)
                 st.image(np.array(box_image))
             else:
                 st.session_state["nav"] = 2
-st.write("Done")
